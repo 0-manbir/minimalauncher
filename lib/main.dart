@@ -37,6 +37,9 @@ class _LauncherState extends State<Launcher> {
   final GlobalKey<RightScreenState> _rightScreenKey =
       GlobalKey<RightScreenState>();
 
+  static const double _bottomGestureExclusionHeight = 24;
+  bool _verticalDragStartedAtBottom = false;
+
   @override
   void initState() {
     super.initState();
@@ -114,33 +117,48 @@ class _LauncherState extends State<Launcher> {
           ),
           body: Builder(
             builder: (context) {
-              return GestureDetector(
-                onVerticalDragEnd: (details) {
-                  if (details.primaryVelocity! > 0) {
-                    // Swipe down
-                    expandNotification();
-                  } else if (details.primaryVelocity! < 0) {
-                    openAppDrawer(context, appDrawerHeight);
-                  }
-                },
-                onLongPress: () {
-                  // HapticFeedback.heavyImpact();
-                  // Open app settings (now moved to Left Screen)
-                },
-                child: PageView(
-                  controller: _pageController,
-                  pageSnapping: true,
-                  physics: const SnappyScrollPhysics(), // custom physics
-                  children: [
-                    LeftScreen(
-                      onSettingsChanged: () async {
-                        await _loadPreferences();
-                        _refreshScreens();
-                      },
-                    ),
-                    HomeScreen(key: _homeScreenKey),
-                    RightScreen(key: _rightScreenKey),
-                  ],
+              return LayoutBuilder(
+                builder: (context, constraints) => GestureDetector(
+                  onVerticalDragStart: (details) {
+                    _verticalDragStartedAtBottom =
+                        details.localPosition.dy >=
+                            constraints.maxHeight -
+                                _bottomGestureExclusionHeight;
+                  },
+                  onVerticalDragEnd: (details) {
+                    final startedAtBottom = _verticalDragStartedAtBottom;
+                    _verticalDragStartedAtBottom = false;
+                    if (startedAtBottom) return;
+
+                    if (details.primaryVelocity! > 0) {
+                      // Swipe down
+                      expandNotification();
+                    } else if (details.primaryVelocity! < 0) {
+                      openAppDrawer(context, appDrawerHeight);
+                    }
+                  },
+                  onVerticalDragCancel: () {
+                    _verticalDragStartedAtBottom = false;
+                  },
+                  onLongPress: () {
+                    // HapticFeedback.heavyImpact();
+                    // Open app settings (now moved to Left Screen)
+                  },
+                  child: PageView(
+                    controller: _pageController,
+                    pageSnapping: true,
+                    physics: const SnappyScrollPhysics(), // custom physics
+                    children: [
+                      LeftScreen(
+                        onSettingsChanged: () async {
+                          await _loadPreferences();
+                          _refreshScreens();
+                        },
+                      ),
+                      HomeScreen(key: _homeScreenKey),
+                      RightScreen(key: _rightScreenKey),
+                    ],
+                  ),
                 ),
               );
             },
