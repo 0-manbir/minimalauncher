@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:minimalauncher/variables/strings.dart';
 
-late String iconFilePath;
+final Map<String, Future<String>> _iconPathCache = {};
 
 bool doesIconFileExist(String packageName) {
   String iconFileName = 'icon_$packageName.png';
@@ -13,24 +13,15 @@ bool doesIconFileExist(String packageName) {
   return iconFile.existsSync();
 }
 
-Future<String>? getAppIcon(String packageName) async {
-  try {
-    // Check if the icon file already exists
-    if (doesIconFileExist(packageName)) {
-      String filePath =
-          '/data/user/0/$launcherPackageName/cache/icon_$packageName.png';
-      iconFilePath = filePath;
-      return filePath;
-    }
+Future<String> getAppIcon(String packageName) =>
+    _iconPathCache.putIfAbsent(packageName, () async {
+      if (doesIconFileExist(packageName)) {
+        return '/data/user/0/$launcherPackageName/cache/icon_$packageName.png';
+      }
 
-    String? appIconPath = await _channel
-        .invokeMethod('getAppIconPath', {'packageName': packageName});
-
-    iconFilePath = appIconPath!;
-    return appIconPath;
-  } catch (e) {
-    return "";
-  }
-}
+      final String? appIconPath = await _channel
+          .invokeMethod('getAppIconPath', {'packageName': packageName});
+      return appIconPath ?? '';
+    });
 
 const MethodChannel _channel = MethodChannel('main_channel');

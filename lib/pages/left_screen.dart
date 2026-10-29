@@ -19,7 +19,9 @@ import 'package:wallpaper_manager_flutter/wallpaper_manager_flutter.dart';
 import 'package:weather/weather.dart';
 
 class LeftScreen extends StatefulWidget {
-  const LeftScreen({super.key});
+  const LeftScreen({super.key, this.onSettingsChanged});
+
+  final VoidCallback? onSettingsChanged;
 
   @override
   State<LeftScreen> createState() => _LeftScreenState();
@@ -31,6 +33,7 @@ class _LeftScreenState extends State<LeftScreen> {
   late SharedPreferences _prefs;
   Color textColor = Colors.black;
   Color selectedColor = Colors.white;
+  bool showWallpaper = false;
 
   static const int maxQuickApps = 10;
   List<String?> quickApps = List<String?>.filled(maxQuickApps, null);
@@ -55,6 +58,7 @@ class _LeftScreenState extends State<LeftScreen> {
   // Load preferences from shared preferences
   _loadPreferences() async {
     _prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
 
     if (!_prefs.containsKey(prefsSelectedColor)) {
       _prefs.setInt(prefsSelectedColor, selectedColor.toARGB32());
@@ -66,6 +70,7 @@ class _LeftScreenState extends State<LeftScreen> {
     setState(() {
       selectedColor = Color(_prefs.getInt(prefsSelectedColor)!);
       textColor = Color(_prefs.getInt(prefsTextColor)!);
+      showWallpaper = _prefs.getBool(prefsShowWallpaper) ?? false;
 
       WEATHERMAP_API_KEY = _prefs.getString(prefsWeatherApiKey) ?? "";
       _temperature = _prefs.getString(prefsWeatherTemp) ?? "--";
@@ -77,6 +82,7 @@ class _LeftScreenState extends State<LeftScreen> {
 
   Future<void> _loadQuickApps() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       quickApps = prefs.getStringList('quick_apps')?.map((e) => e).toList() ??
           List<String?>.filled(maxQuickApps, null);
@@ -119,10 +125,14 @@ class _LeftScreenState extends State<LeftScreen> {
     final String? selectedPackage = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
       builder: (BuildContext context) => AppDrawer(
         autoFocusSearch: true,
         bgColor: selectedColor,
         textColor: textColor,
+        showWallpaper: showWallpaper,
+        initiallyShowAllApps: true,
       ),
     );
 
@@ -231,12 +241,9 @@ class _LeftScreenState extends State<LeftScreen> {
                   MaterialPageRoute(
                     builder: (context) => SettingsPage(),
                   ),
-                ).then((value) {
-                  if (value == true) {
-                    setState(() {
-                      _loadPreferences();
-                    });
-                  }
+                ).then((_) {
+                  _loadPreferences();
+                  widget.onSettingsChanged?.call();
                 });
               },
             ),
@@ -411,7 +418,7 @@ class _LeftScreenState extends State<LeftScreen> {
                                 ConnectionState.done) {
                               if (snapshot.hasError) {
                                 return Text('Error: ${snapshot.error}');
-                              } else if (snapshot.data != null) {
+                              } else if (snapshot.data?.isNotEmpty == true) {
                                 return ClipRRect(
                                     borderRadius: BorderRadius.circular(20),
                                     child: ColorFiltered(
@@ -428,6 +435,15 @@ class _LeftScreenState extends State<LeftScreen> {
                                           File(snapshot.data!),
                                           width: 70,
                                           height: 70,
+                                          cacheWidth: 140,
+                                          cacheHeight: 140,
+                                          errorBuilder:
+                                              (context, error, stackTrace) =>
+                                                  Icon(
+                                            Icons.apps_rounded,
+                                            color: textColor,
+                                            size: 42,
+                                          ),
                                         ),
                                       ),
                                     ));

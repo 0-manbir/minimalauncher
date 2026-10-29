@@ -8,7 +8,6 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
@@ -24,17 +23,17 @@ import io.flutter.plugin.common.MethodChannel
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.LayerDrawable
 import java.io.File
 import java.util.Date
 import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 class MainActivity: FlutterActivity() {
     
     private val TAG = "MainChannel"
     private val CHANNEL = "main_channel"
+    private val iconExecutor = Executors.newFixedThreadPool(4)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         intent.putExtra("background_mode", transparent.toString())
@@ -80,8 +79,10 @@ class MainActivity: FlutterActivity() {
                 "getAppIconPath" -> {
                     val packageName = call.argument<String>("packageName")
                     if (packageName != null) {
-                        val appIconPath = getAppIconPath(packageName)
-                        result.success(appIconPath)
+                        iconExecutor.execute {
+                            val appIconPath = getAppIconPath(packageName)
+                            runOnUiThread { result.success(appIconPath) }
+                        }
                     } else {
                         result.error("MISSING_PACKAGE_NAME", "Package name not provided", null)
                     }
@@ -221,27 +222,18 @@ class MainActivity: FlutterActivity() {
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
             val appIcon = appInfo.loadIcon(packageManager)
 
-            return when (appIcon) {
-                is BitmapDrawable -> saveBitmapToFile(appIcon.bitmap, packageName)
-                is AdaptiveIconDrawable -> {
-                    val width = appIcon.intrinsicWidth
-                    val height = appIcon.intrinsicHeight
-
-                    // Create a bitmap with an alpha channel
-                    val resultBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    val canvas = Canvas(resultBitmap)
-
-                    // Draw the adaptive icon on the transparent bitmap
-                    appIcon.setBounds(0, 0, canvas.width, canvas.height)
-                    appIcon.draw(canvas)
-
-                    saveBitmapToFile(resultBitmap, packageName)
-                }
-                else -> {
-                    // Handle other types of drawables as needed
-                    null
-                }
+            if (appIcon is BitmapDrawable) {
+                return saveBitmapToFile(appIcon.bitmap, packageName)
             }
+
+            val width = appIcon.intrinsicWidth.takeIf { it > 0 } ?: 96
+            val height = appIcon.intrinsicHeight.takeIf { it > 0 } ?: 96
+            val resultBitmap =
+                Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(resultBitmap)
+            appIcon.setBounds(0, 0, canvas.width, canvas.height)
+            appIcon.draw(canvas)
+            saveBitmapToFile(resultBitmap, packageName)
         } catch (e: PackageManager.NameNotFoundException) {
             e.printStackTrace()
             null

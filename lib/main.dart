@@ -1,7 +1,5 @@
 // ignore_for_file: prefer_const_constructors
 
-import 'dart:ui';
-
 import 'package:alarm/alarm.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +7,7 @@ import 'package:minimalauncher/pages/home_page.dart';
 import 'package:minimalauncher/pages/left_screen.dart';
 import 'package:minimalauncher/pages/right_screen.dart';
 import 'package:minimalauncher/pages/widgets/app_drawer.dart';
+import 'package:minimalauncher/variables/launcher_theme.dart';
 import 'package:minimalauncher/variables/strings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:installed_apps/installed_apps.dart';
@@ -35,6 +34,8 @@ class _LauncherState extends State<Launcher> {
 
   final GlobalKey<HomeScreenState> _homeScreenKey =
       GlobalKey<HomeScreenState>();
+  final GlobalKey<RightScreenState> _rightScreenKey =
+      GlobalKey<RightScreenState>();
 
   @override
   void initState() {
@@ -47,25 +48,40 @@ class _LauncherState extends State<Launcher> {
     SharedPreferences prefs = await SharedPreferences.getInstance();
 
     if (!prefs.containsKey(prefsShowWallpaper)) {
-      prefs.setBool(prefsShowWallpaper, false);
+      await prefs.setBool(prefsShowWallpaper, false);
     }
     if (!prefs.containsKey(prefsSelectedColor)) {
-      prefs.setInt(prefsSelectedColor, Color.fromRGBO(228, 228, 228, 1).value);
+      await prefs.setInt(
+        prefsSelectedColor,
+        LauncherThemePreset.presets.first.backgroundColor.toARGB32(),
+      );
     }
     if (!prefs.containsKey(prefsTextColor)) {
-      prefs.setInt(prefsTextColor, Color.fromRGBO(84, 84, 84, 1).value);
+      await prefs.setInt(
+        prefsTextColor,
+        LauncherThemePreset.presets.first.textColor.toARGB32(),
+      );
     }
 
+    final theme = LauncherThemePreset.byId(
+      prefs.getString(prefsLauncherTheme),
+    );
+    if (!prefs.containsKey(prefsLauncherTheme)) {
+      await prefs.setString(prefsLauncherTheme, theme.id);
+      await prefs.setInt(prefsSelectedColor, theme.backgroundColor.toARGB32());
+      await prefs.setInt(prefsTextColor, theme.textColor.toARGB32());
+    }
+
+    if (!mounted) return;
     setState(() {
       showWallpaper = prefs.getBool(prefsShowWallpaper) ?? false;
-      int? colorValue = prefs.getInt(prefsSelectedColor);
-      if (colorValue != null) {
-        selectedColor = Color(colorValue);
-      }
-      int? textColorValue = prefs.getInt(prefsTextColor);
-      if (textColorValue != null) {
-        textColor = Color(textColorValue);
-      }
+      selectedColor = theme.id == 'custom'
+          ? Color(prefs.getInt(prefsSelectedColor) ??
+              theme.backgroundColor.toARGB32())
+          : theme.backgroundColor;
+      textColor = theme.id == 'custom'
+          ? Color(prefs.getInt(prefsTextColor) ?? theme.textColor.toARGB32())
+          : theme.textColor;
     });
   }
 
@@ -75,9 +91,7 @@ class _LauncherState extends State<Launcher> {
         MediaQuery.of(context).size.height - MediaQuery.of(context).padding.top;
 
     Brightness iconsBrightness =
-        ThemeData.estimateBrightnessForColor(selectedColor) == Brightness.dark
-            ? Brightness.light
-            : Brightness.dark;
+        ThemeData.estimateBrightnessForColor(textColor);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: PopScope(
@@ -94,9 +108,11 @@ class _LauncherState extends State<Launcher> {
               systemNavigationBarColor:
                   showWallpaper ? Colors.transparent : selectedColor,
               systemNavigationBarIconBrightness: iconsBrightness,
+              systemNavigationBarContrastEnforced: false,
               statusBarColor:
                   showWallpaper ? Colors.transparent : selectedColor,
               statusBarIconBrightness: iconsBrightness,
+              systemStatusBarContrastEnforced: false,
             ),
           ),
           body: Builder(
@@ -119,9 +135,14 @@ class _LauncherState extends State<Launcher> {
                   pageSnapping: true,
                   physics: const SnappyScrollPhysics(), // custom physics
                   children: [
-                    LeftScreen(),
+                    LeftScreen(
+                      onSettingsChanged: () async {
+                        await _loadPreferences();
+                        _refreshScreens();
+                      },
+                    ),
                     HomeScreen(key: _homeScreenKey),
-                    RightScreen(),
+                    RightScreen(key: _rightScreenKey),
                   ],
                 ),
               );
@@ -140,12 +161,15 @@ class _LauncherState extends State<Launcher> {
     final String? selectedPackage = await showModalBottomSheet<String>(
       context: buildContext,
       isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
       builder: (BuildContext context) => ConstrainedBox(
         constraints: BoxConstraints(maxHeight: height),
         child: AppDrawer(
           autoFocusSearch: true,
           bgColor: selectedColor,
           textColor: textColor,
+          showWallpaper: showWallpaper,
         ),
       ),
     );
@@ -160,6 +184,7 @@ class _LauncherState extends State<Launcher> {
 
   void _refreshScreens() {
     _homeScreenKey.currentState?.refresh();
+    _rightScreenKey.currentState?.refresh();
   }
 
   // native methods----------------------------------------------------------------------------------------------------------
@@ -175,7 +200,7 @@ class _LauncherState extends State<Launcher> {
 }
 
 class SnappyScrollPhysics extends PageScrollPhysics {
-  const SnappyScrollPhysics({ScrollPhysics? parent}) : super(parent: parent);
+  const SnappyScrollPhysics({super.parent});
 
   @override
   SnappyScrollPhysics applyTo(ScrollPhysics? ancestor) {
@@ -183,16 +208,16 @@ class SnappyScrollPhysics extends PageScrollPhysics {
   }
 
   @override
-  double get minFlingDistance => 1.0;
+  double get minFlingDistance => 5.0;
   @override
-  double get minFlingVelocity => 50.0;
+  double get minFlingVelocity => 100.0;
   @override
-  double get maxFlingVelocity => 2000.0;
+  double get maxFlingVelocity => 8000.0;
 
   @override
   SpringDescription get spring => const SpringDescription(
-        mass: 70,
+        mass: 0.5,
         stiffness: 800,
-        damping: 1,
+        damping: 40,
       );
 }

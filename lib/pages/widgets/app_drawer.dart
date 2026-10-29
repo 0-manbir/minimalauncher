@@ -39,17 +39,21 @@ class Application {
 
 class AppDrawer extends StatefulWidget {
   final bool autoFocusSearch;
+  final bool initiallyShowAllApps;
+  final bool showWallpaper;
   final Color bgColor, textColor;
 
   const AppDrawer({
-    Key? key,
+    super.key,
     required this.autoFocusSearch,
     required this.bgColor,
     required this.textColor,
-  }) : super(key: key);
+    required this.showWallpaper,
+    this.initiallyShowAllApps = false,
+  });
 
   @override
-  _AppDrawerState createState() => _AppDrawerState();
+  State<AppDrawer> createState() => _AppDrawerState();
 }
 
 class _AppDrawerState extends State<AppDrawer> {
@@ -59,6 +63,8 @@ class _AppDrawerState extends State<AppDrawer> {
   TextEditingController searchController = TextEditingController();
   String filter = "";
   bool showAllApps = false;
+  bool showRecentApps = true;
+  int appDrawerColumns = 4;
 
   Color get bgColor => widget.bgColor;
   Color get textColor => widget.textColor;
@@ -66,14 +72,25 @@ class _AppDrawerState extends State<AppDrawer> {
   @override
   void initState() {
     super.initState();
+    showAllApps = widget.initiallyShowAllApps;
     searchController.addListener(() {
       setState(() {
-        HapticFeedback.lightImpact();
         filter = searchController.text;
       });
     });
     _loadApps();
     _loadFavoriteApps();
+    _loadDrawerPreferences();
+  }
+
+  Future<void> _loadDrawerPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      showRecentApps = prefs.getBool(prefsShowRecentApps) ?? true;
+      final savedColumns = prefs.getInt(prefsAppDrawerColumns) ?? 4;
+      appDrawerColumns = [3, 4, 5].contains(savedColumns) ? savedColumns : 4;
+    });
   }
 
   Future<void> _loadApps() async {
@@ -84,18 +101,16 @@ class _AppDrawerState extends State<AppDrawer> {
 
     if (cachedApps != null) {
       List<dynamic> jsonApps = jsonDecode(cachedApps);
-      setState(() {
-        apps = jsonApps.map((app) => Application.fromJson(app)).toList();
-      });
+      apps = jsonApps.map((app) => Application.fromJson(app)).toList();
     }
 
     if (cachedRecentApps != null) {
       List<dynamic> jsonRecentApps = jsonDecode(cachedRecentApps);
-      setState(() {
-        recentApps =
-            jsonRecentApps.map((app) => Application.fromJson(app)).toList();
-      });
+      recentApps =
+          jsonRecentApps.map((app) => Application.fromJson(app)).toList();
     }
+
+    if (mounted) setState(() {});
 
     // Fetch and cache apps in the background
     _fetchAndCacheApps();
@@ -155,6 +170,7 @@ class _AppDrawerState extends State<AppDrawer> {
         jsonEncode(recentAppsList.map((app) => app.toJson()).toList()));
 
     // Update state in background to reflect new data
+    if (!mounted) return;
     setState(() {
       apps = allAppsList;
       recentApps = recentAppsList;
@@ -193,6 +209,8 @@ class _AppDrawerState extends State<AppDrawer> {
   @override
   Widget build(BuildContext context) {
     filter = filter.trim();
+    final sortedApps = [...apps]
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     final filteredApps = filter.isEmpty
         ? []
         : [
@@ -204,21 +222,26 @@ class _AppDrawerState extends State<AppDrawer> {
           ].toList();
 
     if (showAllApps) {
-      apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      final cellWidth = (MediaQuery.of(context).size.width -
+              32 -
+              (appDrawerColumns - 1) * 15) /
+          appDrawerColumns;
+      final iconSize = (cellWidth * 0.75).clamp(36.0, 70.0).toDouble();
       return Scaffold(
-        backgroundColor: widget.bgColor,
+        backgroundColor:
+            widget.showWallpaper ? Colors.transparent : widget.bgColor,
         body: Padding(
           padding: const EdgeInsets.only(top: 16.0, left: 16.0, right: 16.0),
           child: GridView.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: appDrawerColumns,
               mainAxisSpacing: 15.0,
               crossAxisSpacing: 15.0,
               childAspectRatio: 0.7,
             ),
-            itemCount: apps.length,
+            itemCount: sortedApps.length,
             itemBuilder: (context, index) {
-              final app = apps[index];
+              final app = sortedApps[index];
               return GestureDetector(
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
@@ -226,24 +249,32 @@ class _AppDrawerState extends State<AppDrawer> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       FutureBuilder<String?>(
-                        key: UniqueKey(),
                         future: getAppIcon(app.packageName),
                         builder: (context, snapshot) {
                           if (snapshot.connectionState ==
                               ConnectionState.done) {
                             if (snapshot.hasError) {
-                              return Text('Error: ${snapshot.error}');
-                            } else if (snapshot.data != null) {
+                              return Icon(Icons.apps_rounded,
+                                  color: textColor, size: iconSize);
+                            } else if (snapshot.data?.isNotEmpty == true) {
                               return Image.file(
                                 File(snapshot.data!),
-                                width: 70,
-                                height: 70,
+                                width: iconSize,
+                                height: iconSize,
+                                cacheWidth: (iconSize * 2).round(),
+                                cacheHeight: (iconSize * 2).round(),
+                                errorBuilder: (context, error, stackTrace) =>
+                                    Icon(Icons.apps_rounded,
+                                        color: textColor, size: iconSize),
                               );
                             } else {
-                              return const Text('App icon path is null.');
+                              return Icon(Icons.apps_rounded,
+                                  color: textColor, size: iconSize);
                             }
                           } else {
-                            return const CircularProgressIndicator();
+                            return Icon(Icons.apps_rounded,
+                                color: textColor.withAlpha(100),
+                                size: iconSize);
                           }
                         },
                       ),
@@ -302,11 +333,11 @@ class _AppDrawerState extends State<AppDrawer> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endTop,
-      backgroundColor: bgColor,
+      backgroundColor: widget.showWallpaper ? Colors.transparent : bgColor,
       body: Column(
         children: [
           // Displaying 5 most recently installed apps
-          if (recentApps.isNotEmpty && filter.isEmpty)
+          if (showRecentApps && recentApps.isNotEmpty && filter.isEmpty)
             Expanded(
               flex: 4,
               child: SizedBox(
@@ -341,7 +372,8 @@ class _AppDrawerState extends State<AppDrawer> {
               ),
             ),
 
-          if (recentApps.isEmpty) Expanded(child: Container()),
+          if (!showRecentApps || recentApps.isEmpty)
+            const Expanded(child: SizedBox.shrink()),
 
           if (filter.isNotEmpty)
             Expanded(

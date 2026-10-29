@@ -39,14 +39,17 @@ class Event {
 }
 
 class RightScreen extends StatefulWidget {
+  const RightScreen({super.key});
+
   @override
-  _RightScreenState createState() => _RightScreenState();
+  RightScreenState createState() => RightScreenState();
 }
 
-class _RightScreenState extends State<RightScreen> {
+class RightScreenState extends State<RightScreen> {
   List<Event> _events = [];
   Color selectedColor = Colors.transparent;
   Color textColor = Colors.transparent;
+  bool showWallpaper = false;
 
   @override
   void initState() {
@@ -58,6 +61,7 @@ class _RightScreenState extends State<RightScreen> {
   _loadPreferences() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
 
+    if (!mounted) return;
     setState(() {
       int? colorValue = prefs.getInt(prefsSelectedColor);
       if (colorValue != null) {
@@ -67,12 +71,19 @@ class _RightScreenState extends State<RightScreen> {
       if (textColorValue != null) {
         textColor = Color(textColorValue);
       }
+      showWallpaper = prefs.getBool(prefsShowWallpaper) ?? false;
     });
+  }
+
+  void refresh() {
+    _loadPreferences();
+    _loadEvents();
   }
 
   Future<void> _loadEvents() async {
     final prefs = await SharedPreferences.getInstance();
     final eventList = prefs.getStringList('events') ?? [];
+    if (!mounted) return;
     setState(() {
       _events = eventList.map((e) => Event.fromJson(json.decode(e))).toList();
     });
@@ -173,7 +184,7 @@ class _RightScreenState extends State<RightScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: selectedColor,
+      backgroundColor: showWallpaper ? Colors.transparent : selectedColor,
       isScrollControlled: true,
       builder: (BuildContext context) {
         return StatefulBuilder(
@@ -344,7 +355,7 @@ class _RightScreenState extends State<RightScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: selectedColor,
+      backgroundColor: showWallpaper ? Colors.transparent : selectedColor,
       body: Column(
         children: [
           SizedBox(height: 16.0),
@@ -395,9 +406,14 @@ class _RightScreenState extends State<RightScreen> {
                             onTap: () {
                               showModalBottomSheet(
                                 context: context,
+                                backgroundColor: showWallpaper
+                                    ? Colors.transparent
+                                    : selectedColor,
                                 builder: (context) {
                                   return Container(
-                                    color: selectedColor,
+                                    color: showWallpaper
+                                        ? Colors.transparent
+                                        : selectedColor,
                                     child: Column(
                                       children: [
                                         SizedBox(height: 16.0),
@@ -502,7 +518,7 @@ class _RightScreenState extends State<RightScreen> {
   Widget calendar() {
     return CustomCalendarView(
       initialDate: DateTime.now(),
-      bgColor: selectedColor,
+      bgColor: showWallpaper ? Colors.transparent : selectedColor,
       textColor: textColor.withAlpha(204),
       fontFamily: fontNormal,
       events: _events,
