@@ -502,7 +502,7 @@ class _AppDrawerState extends State<AppDrawer> {
           .invokeMethod('canLaunchApp', {'packageName': packageName});
       // print("$packageName can launch: $result");
       return result;
-    } on PlatformException catch (e) {
+    } on PlatformException {
       // print("Error: ${e.message}");
       return false;
     }

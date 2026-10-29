@@ -15,7 +15,7 @@ const String prefsWeatherDesc = 'weather';
 
 const String homeStatsSeperator = '   /   ';
 
-const String launcherPackageName = 'com.example.minimalauncher';
+const String launcherPackageName = 'com.manbir.minimalauncher';
 
 const String googlePackageName = 'com.google.android.googlequicksearchbox';
 const String googleplaystorePackageName = 'com.android.vending';
