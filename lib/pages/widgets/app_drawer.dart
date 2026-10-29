@@ -67,6 +67,7 @@ class _AppDrawerState extends State<AppDrawer> {
   bool focusModeEnabled = false;
   Set<String> focusBlockedApps = {};
   int appDrawerColumns = 4;
+  Animation<double>? _openingAnimation;
 
   Color get bgColor => widget.bgColor;
   Color get textColor => widget.textColor;
@@ -115,10 +116,34 @@ class _AppDrawerState extends State<AppDrawer> {
           jsonRecentApps.map((app) => Application.fromJson(app)).toList();
     }
 
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
 
-    // Fetch and cache apps in the background
-    _fetchAndCacheApps();
+    _refreshAppsAfterOpeningAnimation();
+  }
+
+  void _refreshAppsAfterOpeningAnimation() {
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation == null || animation.status == AnimationStatus.completed) {
+      _fetchAndCacheApps();
+      return;
+    }
+
+    _openingAnimation = animation;
+    animation.addStatusListener(_handleOpeningAnimationStatus);
+  }
+
+  void _handleOpeningAnimationStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed &&
+        status != AnimationStatus.dismissed) {
+      return;
+    }
+
+    _openingAnimation?.removeStatusListener(_handleOpeningAnimationStatus);
+    _openingAnimation = null;
+    if (status == AnimationStatus.completed && mounted) {
+      _fetchAndCacheApps();
+    }
   }
 
   Future<DateTime?> getInstallTime(String packageName) async {
@@ -209,6 +234,13 @@ class _AppDrawerState extends State<AppDrawer> {
       jsonEncode(favoriteApps.map((fav) => fav.toJson()).toList()),
     );
     setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _openingAnimation?.removeStatusListener(_handleOpeningAnimationStatus);
+    searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -360,9 +392,7 @@ class _AppDrawerState extends State<AppDrawer> {
       body: Column(
         children: [
           // Displaying 5 most recently installed apps
-          if (showRecentApps &&
-              visibleRecentApps.isNotEmpty &&
-              filter.isEmpty)
+          if (showRecentApps && visibleRecentApps.isNotEmpty && filter.isEmpty)
             Expanded(
               flex: 4,
               child: SizedBox(
