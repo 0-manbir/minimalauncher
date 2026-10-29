@@ -15,6 +15,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool showWallpaper = false;
   bool is24HourFormat = false;
+  bool showEventsOnHomeScreen = true;
   bool showRecentApps = true;
   int appDrawerColumns = 4;
   LauncherThemePreset selectedTheme = LauncherThemePreset.presets.first;
@@ -32,28 +33,17 @@ class _SettingsPageState extends State<SettingsPage> {
     final storedTheme = prefs.getString(prefsLauncherTheme);
     final legacyBackground = prefs.getInt(prefsSelectedColor);
     final legacyText = prefs.getInt(prefsTextColor);
-    final theme = storedTheme == null
-        ? LauncherThemePreset.presets.firstWhere(
-            (preset) =>
-                preset.backgroundColor.toARGB32() == legacyBackground &&
-                preset.textColor.toARGB32() == legacyText,
-            orElse: () => LauncherThemePreset.presets.first,
-          )
-        : LauncherThemePreset.byId(storedTheme);
-    final selectedTheme = theme.id == 'custom'
-        ? theme.copyWith(
-            backgroundColor: Color(
-              legacyBackground ?? theme.backgroundColor.toARGB32(),
-            ),
-            textColor: Color(
-              legacyText ?? theme.textColor.toARGB32(),
-            ),
-          )
-        : theme;
+    final selectedTheme = LauncherThemePreset.fromPreferences(
+      id: storedTheme,
+      backgroundColor: legacyBackground,
+      textColor: legacyText,
+    );
 
     setState(() {
       showWallpaper = prefs.getBool(prefsShowWallpaper) ?? false;
       is24HourFormat = prefs.getBool(prefsIs24HourFormat) ?? false;
+      showEventsOnHomeScreen =
+          prefs.getBool(prefsShowEventsOnHomeScreen) ?? true;
       showRecentApps = prefs.getBool(prefsShowRecentApps) ?? true;
       appDrawerColumns = prefs.getInt(prefsAppDrawerColumns) ?? 4;
       this.selectedTheme = selectedTheme;
@@ -73,6 +63,10 @@ class _SettingsPageState extends State<SettingsPage> {
     await prefs.setString(prefsLauncherTheme, selectedTheme.id);
     await prefs.setBool(prefsShowWallpaper, showWallpaper);
     await prefs.setBool(prefsIs24HourFormat, is24HourFormat);
+    await prefs.setBool(
+      prefsShowEventsOnHomeScreen,
+      showEventsOnHomeScreen,
+    );
     await prefs.setBool(prefsShowRecentApps, showRecentApps);
     await prefs.setInt(prefsAppDrawerColumns, appDrawerColumns);
     await prefs.setInt(
@@ -95,9 +89,8 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _pickCustomColor({required bool background}) async {
-    var pickedColor = background
-        ? selectedTheme.backgroundColor
-        : selectedTheme.textColor;
+    var pickedColor =
+        background ? selectedTheme.backgroundColor : selectedTheme.textColor;
     final updatedColor = await showDialog<Color>(
       context: context,
       builder: (context) => AlertDialog(
@@ -149,6 +142,13 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _setShowRecentApps(bool value) async {
     setState(() {
       showRecentApps = value;
+    });
+    await _savePreferences();
+  }
+
+  Future<void> _setShowEventsOnHomeScreen(bool value) async {
+    setState(() {
+      showEventsOnHomeScreen = value;
     });
     await _savePreferences();
   }
@@ -228,31 +228,31 @@ class _SettingsPageState extends State<SettingsPage> {
                                   : theme.textColor,
                             ),
                           ),
-                          if (selectedTheme.id == 'custom') ...[
-                            const Divider(height: 1),
-                            ListTile(
-                              title: Text(
-                                'Background color',
-                                style:
-                                    TextStyle(color: textColor, fontFamily: fontNormal),
-                              ),
-                              trailing: _colorPreview(selectedTheme.backgroundColor),
-                              onTap: () => _pickCustomColor(background: true),
-                            ),
-                            ListTile(
-                              title: Text(
-                                'Text color',
-                                style:
-                                    TextStyle(color: textColor, fontFamily: fontNormal),
-                              ),
-                              trailing: _colorPreview(selectedTheme.textColor),
-                              onTap: () => _pickCustomColor(background: false),
-                            ),
-                          ],
                         ),
                     ],
                   ),
                 ),
+                if (selectedTheme.id == 'custom') ...[
+                  const Divider(height: 1),
+                  ListTile(
+                    title: Text(
+                      'Background color',
+                      style:
+                          TextStyle(color: textColor, fontFamily: fontNormal),
+                    ),
+                    trailing: _colorPreview(selectedTheme.backgroundColor),
+                    onTap: () => _pickCustomColor(background: true),
+                  ),
+                  ListTile(
+                    title: Text(
+                      'Text color',
+                      style:
+                          TextStyle(color: textColor, fontFamily: fontNormal),
+                    ),
+                    trailing: _colorPreview(selectedTheme.textColor),
+                    onTap: () => _pickCustomColor(background: false),
+                  ),
+                ],
                 const Divider(height: 1),
                 SwitchListTile(
                   title: Text(

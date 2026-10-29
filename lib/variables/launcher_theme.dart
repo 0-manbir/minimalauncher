@@ -45,6 +45,37 @@ class LauncherThemePreset {
         orElse: () => presets.first,
       );
 
+  static LauncherThemePreset fromPreferences({
+    String? id,
+    int? backgroundColor,
+    int? textColor,
+  }) {
+    if (id == 'custom') {
+      return byId(id).copyWith(
+        backgroundColor: Color(
+          backgroundColor ?? byId(id).backgroundColor.toARGB32(),
+        ),
+        textColor: Color(textColor ?? byId(id).textColor.toARGB32()),
+      );
+    }
+
+    if (id != null) return byId(id);
+
+    for (final preset in presets.where((preset) => preset.id != 'custom')) {
+      if (preset.backgroundColor.toARGB32() == backgroundColor &&
+          preset.textColor.toARGB32() == textColor) {
+        return preset;
+      }
+    }
+
+    return byId('custom').copyWith(
+      backgroundColor: Color(
+        backgroundColor ?? presets.first.backgroundColor.toARGB32(),
+      ),
+      textColor: Color(textColor ?? presets.first.textColor.toARGB32()),
+    );
+  }
+
   LauncherThemePreset copyWith({
     Color? backgroundColor,
     Color? textColor,

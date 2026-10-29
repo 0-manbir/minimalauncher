@@ -33,8 +33,8 @@ class Event {
         name: json['name'],
         description: json['description'],
         deadline: DateTime.parse(json['deadline']),
-        showOnHomeScreen: json['showOnHomeScreen'],
-        isCompleted: json['isCompleted'],
+        showOnHomeScreen: json['showOnHomeScreen'] as bool? ?? false,
+        isCompleted: json['isCompleted'] as bool? ?? false,
       );
 }
 
@@ -50,6 +50,8 @@ class RightScreenState extends State<RightScreen> {
   Color selectedColor = Colors.transparent;
   Color textColor = Colors.transparent;
   bool showWallpaper = false;
+  bool showEventsOnHomeScreen = true;
+  bool is24HourFormat = false;
 
   @override
   void initState() {
@@ -72,6 +74,9 @@ class RightScreenState extends State<RightScreen> {
         textColor = Color(textColorValue);
       }
       showWallpaper = prefs.getBool(prefsShowWallpaper) ?? false;
+      showEventsOnHomeScreen =
+          prefs.getBool(prefsShowEventsOnHomeScreen) ?? true;
+      is24HourFormat = prefs.getBool(prefsIs24HourFormat) ?? false;
     });
   }
 
@@ -97,7 +102,7 @@ class RightScreenState extends State<RightScreen> {
 
     // Convert sorted events to JSON and save to SharedPreferences
     final eventList = _events.map((e) => json.encode(e.toJson())).toList();
-    prefs.setStringList('events', eventList);
+    await prefs.setStringList('events', eventList);
   }
 
   void _scheduleAlarm(Event event) async {
@@ -126,224 +131,277 @@ class RightScreenState extends State<RightScreen> {
     await Alarm.stop(alarmId);
   }
 
-  void _addEvent(Event event) {
+  Future<void> _addEvent(Event event) async {
     setState(() {
       _events.add(event);
     });
-    _scheduleAlarm(event);
-    _saveEvents();
+    if (event.deadline.isAfter(DateTime.now())) {
+      _scheduleAlarm(event);
+    }
+    await _saveEvents();
   }
 
-  void _deleteEvent(Event event) {
+  Future<void> _deleteEvent(Event event) async {
     setState(() {
       _events.remove(event);
     });
     _cancelAlarm(event);
-    _saveEvents();
+    await _saveEvents();
   }
 
-  void _toggleComplete(Event event) {
+  Future<void> _toggleComplete(Event event) async {
     setState(() {
       event.isCompleted = !event.isCompleted;
     });
-    _saveEvents();
+    await _saveEvents();
   }
 
   String _formatDate(DateTime dateTime) {
-    int hour = dateTime.hour;
-    int minute = dateTime.minute;
-    String period = hour >= 12 ? 'PM' : 'AM';
+    final time = is24HourFormat
+        ? DateFormat.Hm().format(dateTime)
+        : DateFormat.jm().format(dateTime);
 
-    hour = hour % 12;
-    hour = hour == 0 ? 12 : hour;
-
-    String time = '$hour:${minute.toString().padLeft(2, '0')} $period';
-
-    String date = '';
-
-    if (dateTime.year == DateTime.now().year &&
-        dateTime.month == DateTime.now().month &&
-        dateTime.day == DateTime.now().day) {
+    String date;
+    final today = DateTime.now();
+    final tomorrow = DateTime(today.year, today.month, today.day + 1);
+    if (DateUtils.isSameDay(dateTime, today)) {
       date = 'Today';
-    } else if (dateTime.year == DateTime.now().year &&
-        dateTime.month == DateTime.now().month &&
-        dateTime.day == DateTime.now().day + 1) {
+    } else if (DateUtils.isSameDay(dateTime, tomorrow)) {
       date = 'Tomorrow';
     } else {
-      date = '${DateFormat.MMM().format(dateTime)} ${dateTime.day}';
+      date = DateFormat('EEE, MMM d').format(dateTime);
     }
 
     return '$date • $time';
   }
 
   void showAddEventDialog(DateTime deadline) {
-    // Move the variables outside the builder to retain their values
     String name = '';
     String description = '';
-    bool showOnHomeScreen = false;
+    bool showOnHomeScreen = showEventsOnHomeScreen;
 
     showModalBottomSheet(
       context: context,
       backgroundColor: showWallpaper ? Colors.transparent : selectedColor,
       isScrollControlled: true,
+      useRootNavigator: true,
       builder: (BuildContext context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
+            final dialogTextColor = textColor;
+            final dialogBackground =
+                showWallpaper ? Colors.transparent : selectedColor;
             return Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(height: 32.0),
-                  Text(
-                    'Add Event',
-                    style: TextStyle(
-                      color: textColor,
-                      fontFamily: fontNormal,
-                      fontSize: 24.0,
-                    ),
-                  ),
-                  TextField(
-                    autofocus: true,
-                    cursorColor: textColor,
-                    style: TextStyle(
-                      color: textColor,
-                      fontFamily: fontNormal,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: 'Event Name',
-                      labelStyle: TextStyle(
-                        color: textColor,
-                        fontFamily: fontNormal,
-                      ),
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        name = value;
-                      });
-                    },
-                  ),
-                  TextField(
-                    cursorColor: textColor,
-                    style: TextStyle(
-                      color: textColor,
-                      fontFamily: fontNormal,
-                    ),
-                    maxLines: 3,
-                    decoration: InputDecoration(
-                      labelText: 'Description',
-                      alignLabelWithHint: true,
-                      labelStyle: TextStyle(
-                        color: textColor,
-                        fontFamily: fontNormal,
-                      ),
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        description = value;
-                      });
-                    },
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Deadline:  ${_formatDate(deadline)}',
-                          style: TextStyle(
-                            color: textColor,
-                            fontFamily: fontNormal,
-                          ),
+              padding: EdgeInsets.only(
+                left: 20,
+                top: 12,
+                right: 20,
+                bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: dialogTextColor.withAlpha(100),
+                          borderRadius: BorderRadius.circular(4),
                         ),
                       ),
-                      IconButton(
-                        icon: Icon(Icons.calendar_month_rounded,
-                            color: textColor),
-                        onPressed: () async {
-                          final selectedDate = await showDatePicker(
-                            context: context,
-                            initialDate: DateTime.now(),
-                            firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(Duration(days: 365)),
-                          );
-                          if (selectedDate != null) {
-                            setState(() {
-                              deadline = DateTime(
-                                selectedDate.year,
-                                selectedDate.month,
-                                selectedDate.day,
-                                deadline.hour,
-                                deadline.minute,
-                              );
-                            });
-                          }
-                        },
+                    ),
+                    Text(
+                      'New event',
+                      style: TextStyle(
+                        color: dialogTextColor,
+                        fontFamily: fontNormal,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w600,
                       ),
-                      IconButton(
-                        icon: Icon(Icons.access_time_rounded, color: textColor),
-                        onPressed: () async {
-                          final selectedTime = await showTimePicker(
-                            context: context,
-                            initialTime: TimeOfDay.fromDateTime(deadline),
-                          );
-                          if (selectedTime != null) {
-                            setState(() {
-                              deadline = DateTime(
-                                deadline.year,
-                                deadline.month,
-                                deadline.day,
-                                selectedTime.hour,
-                                selectedTime.minute,
-                              );
-                            });
-                          }
-                        },
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      autofocus: true,
+                      cursorColor: dialogTextColor,
+                      style: TextStyle(
+                        color: dialogTextColor,
+                        fontFamily: fontNormal,
                       ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Show on Home Screen',
+                      decoration: InputDecoration(
+                        labelText: 'Event name',
+                        labelStyle: TextStyle(color: dialogTextColor),
+                        prefixIcon: Icon(
+                          Icons.event_note_rounded,
+                          color: dialogTextColor,
+                        ),
+                      ),
+                      onChanged: (value) => setState(() => name = value),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      cursorColor: dialogTextColor,
+                      style: TextStyle(
+                        color: dialogTextColor,
+                        fontFamily: fontNormal,
+                      ),
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Notes (optional)',
+                        alignLabelWithHint: true,
+                        labelStyle: TextStyle(color: dialogTextColor),
+                        prefixIcon: Icon(
+                          Icons.notes_rounded,
+                          color: dialogTextColor,
+                        ),
+                      ),
+                      onChanged: (value) => setState(() => description = value),
+                    ),
+                    const SizedBox(height: 12),
+                    Card(
+                      color: dialogTextColor.withAlpha(15),
+                      child: Column(
+                        children: [
+                          ListTile(
+                            leading: Icon(
+                              Icons.calendar_month_rounded,
+                              color: dialogTextColor,
+                            ),
+                            title: Text(
+                              'Date',
+                              style: TextStyle(
+                                color: dialogTextColor.withAlpha(160),
+                                fontFamily: fontNormal,
+                                fontSize: 12,
+                              ),
+                            ),
+                            subtitle: Text(
+                              DateFormat('EEEE, MMM d, y').format(deadline),
+                              style: TextStyle(
+                                color: dialogTextColor,
+                                fontFamily: fontNormal,
+                              ),
+                            ),
+                            trailing: const Icon(Icons.edit_calendar_rounded),
+                            onTap: () async {
+                              final selectedDate = await showDatePicker(
+                                context: context,
+                                initialDate: deadline,
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime.now()
+                                    .add(const Duration(days: 3650)),
+                              );
+                              if (selectedDate != null) {
+                                setState(() {
+                                  deadline = DateTime(
+                                    selectedDate.year,
+                                    selectedDate.month,
+                                    selectedDate.day,
+                                    deadline.hour,
+                                    deadline.minute,
+                                  );
+                                });
+                              }
+                            },
+                          ),
+                          const Divider(height: 1, indent: 64),
+                          ListTile(
+                            leading: Icon(
+                              Icons.access_time_rounded,
+                              color: dialogTextColor,
+                            ),
+                            title: Text(
+                              'Time',
+                              style: TextStyle(
+                                color: dialogTextColor.withAlpha(160),
+                                fontFamily: fontNormal,
+                                fontSize: 12,
+                              ),
+                            ),
+                            subtitle: Text(
+                              TimeOfDay.fromDateTime(deadline).format(context),
+                              style: TextStyle(
+                                color: dialogTextColor,
+                                fontFamily: fontNormal,
+                              ),
+                            ),
+                            trailing: const Icon(Icons.edit_rounded),
+                            onTap: () async {
+                              final selectedTime = await showTimePicker(
+                                context: context,
+                                initialTime: TimeOfDay.fromDateTime(deadline),
+                              );
+                              if (selectedTime != null) {
+                                setState(() {
+                                  deadline = DateTime(
+                                    deadline.year,
+                                    deadline.month,
+                                    deadline.day,
+                                    selectedTime.hour,
+                                    selectedTime.minute,
+                                  );
+                                });
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Show on home screen',
                         style: TextStyle(
-                          color: textColor,
+                          color: dialogTextColor,
                           fontFamily: fontNormal,
                         ),
                       ),
-                      Switch(
-                        value: showOnHomeScreen,
-                        onChanged: (value) {
-                          setState(() {
-                            showOnHomeScreen = value;
-                          });
-                        },
+                      subtitle: Text(
+                        'Also show this event below the clock.',
+                        style: TextStyle(
+                          color: dialogTextColor.withAlpha(160),
+                          fontFamily: fontNormal,
+                          fontSize: 12,
+                        ),
                       ),
-                    ],
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      final newEvent = Event(
-                        name: name,
-                        description: description,
-                        deadline: deadline,
-                        showOnHomeScreen: showOnHomeScreen,
-                      );
-                      _addEvent(newEvent);
-                      Navigator.pop(context);
-                    },
-                    style: ButtonStyle(
-                      backgroundColor: WidgetStatePropertyAll(textColor),
+                      value: showOnHomeScreen,
+                      activeThumbColor: dialogTextColor,
+                      onChanged: (value) =>
+                          setState(() => showOnHomeScreen = value),
                     ),
-                    child: Text(
-                      'Add Event',
-                      style: TextStyle(
-                        color: selectedColor,
-                        fontFamily: fontNormal,
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: name.trim().isEmpty
+                            ? null
+                            : () async {
+                                await _addEvent(
+                                  Event(
+                                    name: name.trim(),
+                                    description: description.trim(),
+                                    deadline: deadline,
+                                    showOnHomeScreen: showOnHomeScreen,
+                                  ),
+                                );
+                                if (context.mounted) Navigator.pop(context);
+                              },
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Save event'),
+                        style: FilledButton.styleFrom(
+                          foregroundColor:
+                              dialogBackground == Colors.transparent
+                                  ? selectedColor
+                                  : dialogBackground,
+                          backgroundColor: dialogTextColor,
+                        ),
                       ),
                     ),
-                  ),
-                  Expanded(child: Container()),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -352,164 +410,288 @@ class RightScreenState extends State<RightScreen> {
     );
   }
 
+  void _showEventDetails(Event event) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: showWallpaper ? Colors.transparent : selectedColor,
+      useRootNavigator: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: textColor.withAlpha(100),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              Text(
+                event.name,
+                style: TextStyle(
+                  color: textColor,
+                  fontFamily: fontNormal,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _formatDate(event.deadline),
+                style: TextStyle(
+                  color: textColor.withAlpha(180),
+                  fontFamily: fontNormal,
+                ),
+              ),
+              if (event.description.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  event.description,
+                  style: TextStyle(color: textColor, fontFamily: fontNormal),
+                ),
+              ],
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () async {
+                  await _toggleComplete(event);
+                  if (context.mounted) Navigator.pop(context);
+                },
+                icon: Icon(
+                  event.isCompleted
+                      ? Icons.undo_rounded
+                      : Icons.check_circle_outline_rounded,
+                ),
+                label: Text(
+                  event.isCompleted ? 'Mark as open' : 'Mark as completed',
+                ),
+                style: FilledButton.styleFrom(
+                  foregroundColor: selectedColor,
+                  backgroundColor: textColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _eventSectionTitle(String title, int count) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+        child: Row(
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                color: textColor,
+                fontFamily: fontNormal,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$count',
+              style: TextStyle(
+                color: textColor.withAlpha(150),
+                fontFamily: fontNormal,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _eventCard(Event event) {
+    final cardColor = showWallpaper
+        ? textColor.withAlpha(18)
+        : Color.alphaBlend(textColor.withAlpha(12), selectedColor);
+    return Card(
+      color: cardColor,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        onTap: () => _showEventDetails(event),
+        leading: IconButton(
+          tooltip: event.isCompleted ? 'Mark as open' : 'Mark as completed',
+          onPressed: () => _toggleComplete(event),
+          icon: Icon(
+            event.isCompleted
+                ? Icons.check_circle_rounded
+                : Icons.radio_button_unchecked_rounded,
+            color: event.isCompleted ? Colors.green : textColor,
+          ),
+        ),
+        title: Text(
+          event.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: textColor,
+            fontFamily: fontNormal,
+            decoration: event.isCompleted ? TextDecoration.lineThrough : null,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _formatDate(event.deadline),
+                style: TextStyle(
+                  color: textColor.withAlpha(180),
+                  fontFamily: fontNormal,
+                  fontSize: 12,
+                ),
+              ),
+              if (event.description.isNotEmpty)
+                Text(
+                  event.description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: textColor.withAlpha(150),
+                    fontFamily: fontNormal,
+                    fontSize: 12,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        trailing: PopupMenuButton<String>(
+          iconColor: textColor,
+          onSelected: (action) {
+            if (action == 'delete') _deleteEvent(event);
+            if (action == 'toggle') _toggleComplete(event);
+          },
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'toggle',
+              child: Text(
+                event.isCompleted ? 'Reopen event' : 'Complete event',
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'delete',
+              child: Text('Delete event'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final openEvents = _events.where((event) => !event.isCompleted).toList()
+      ..sort((a, b) => a.deadline.compareTo(b.deadline));
+    final completedEvents = _events.where((event) => event.isCompleted).toList()
+      ..sort((a, b) => b.deadline.compareTo(a.deadline));
+
     return Scaffold(
       backgroundColor: showWallpaper ? Colors.transparent : selectedColor,
-      body: Column(
-        children: [
-          SizedBox(height: 16.0),
-          calendar(),
-          _events.isEmpty
-              ? Expanded(
-                  child: Center(
+      body: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            calendar(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+              child: Row(
+                children: [
+                  Expanded(
                     child: Text(
-                      'No events added yet.',
+                      'Your events',
                       style: TextStyle(
                         color: textColor,
-                        fontSize: 24.0,
                         fontFamily: fontNormal,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
-                )
-              : Column(
-                  children: [
-                    Text(
-                      "Events",
-                      style: TextStyle(
-                        color: textColor,
-                        fontSize: 18.0,
-                        fontWeight: FontWeight.w500,
-                        fontFamily: fontNormal,
-                      ),
+                  Text(
+                    '${_events.length}',
+                    style: TextStyle(
+                      color: textColor.withAlpha(160),
+                      fontFamily: fontNormal,
                     ),
-                    SizedBox(height: 16.0),
-                    ListView.builder(
-                      shrinkWrap: true,
-                      padding: EdgeInsets.all(16.0),
-                      itemCount: _events.length,
-                      itemBuilder: (context, index) {
-                        final event = _events[index];
-                        return Container(
-                          margin: EdgeInsets.symmetric(
-                              vertical: 8.0), // Adds spacing between list items
-                          decoration: BoxDecoration(
-                            color: textColor.withOpacity(0.02),
-                            borderRadius: BorderRadius.circular(16.0),
-                          ),
-                          child: ListTile(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                  16.0), // Ensure the ListTile matches the container radius
-                            ),
-                            onTap: () {
-                              showModalBottomSheet(
-                                context: context,
-                                backgroundColor: showWallpaper
-                                    ? Colors.transparent
-                                    : selectedColor,
-                                builder: (context) {
-                                  return Container(
-                                    color: showWallpaper
-                                        ? Colors.transparent
-                                        : selectedColor,
-                                    child: Column(
-                                      children: [
-                                        SizedBox(height: 16.0),
-                                        Text(
-                                          "Task Description: ",
-                                          style: TextStyle(
-                                            color: textColor,
-                                            fontFamily: fontNormal,
-                                            fontSize: 26.0,
-                                          ),
-                                        ),
-                                        ListTile(
-                                          title: Text(
-                                            event.description,
-                                            style: TextStyle(
-                                              color: textColor,
-                                              fontFamily: fontNormal,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              );
-                            },
-                            title: Text(
-                              event.name,
-                              style: TextStyle(
-                                color: textColor,
-                                fontFamily: fontNormal,
-                                fontSize: 18.0,
-                                decoration: event.isCompleted
-                                    ? TextDecoration.lineThrough
-                                    : TextDecoration.none,
-                              ),
-                            ),
-                            subtitle: Text(
-                              _formatDate(event.deadline),
-                              style: TextStyle(
-                                color: textColor,
-                                fontFamily: fontNormal,
-                                fontSize: 12.0,
-                                decoration:
-                                    event.deadline.isBefore(DateTime.now())
-                                        ? TextDecoration.lineThrough
-                                        : TextDecoration.none,
-                              ),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: Icon(Icons.delete, color: textColor),
-                                  onPressed: () => _deleteEvent(event),
-                                ),
-                                IconButton(
-                                  icon: Icon(
-                                    event.isCompleted
-                                        ? Icons.check_rounded
-                                        : Icons.close_rounded,
-                                    size: 28.0,
-                                    color: event.isCompleted
-                                        ? Colors.green[300]
-                                        : Colors.red[300],
-                                  ),
-                                  onPressed: () => _toggleComplete(event),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-        ],
-      ),
-      floatingActionButton: SizedBox(
-        width: MediaQuery.of(context).size.width * 0.4,
-        child: FloatingActionButton.extended(
-          onPressed: () {
-            showAddEventDialog(DateTime.now());
-          },
-          backgroundColor: textColor,
-          icon: Icon(
-            Icons.add_rounded,
-            color: selectedColor,
-          ),
-          label: Text(
-            'Add Event',
-            style: TextStyle(
-              color: selectedColor,
-              fontFamily: fontNormal,
+                  ),
+                ],
+              ),
             ),
-          ),
+            Expanded(
+              child: _events.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.event_available_rounded,
+                              color: textColor.withAlpha(150),
+                              size: 40,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Your calendar is clear',
+                              style: TextStyle(
+                                color: textColor,
+                                fontFamily: fontNormal,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Add an event to keep track of what’s next.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: textColor.withAlpha(160),
+                                fontFamily: fontNormal,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+                      children: [
+                        if (openEvents.isNotEmpty) ...[
+                          _eventSectionTitle('To do', openEvents.length),
+                          ...openEvents.map(_eventCard),
+                        ],
+                        if (completedEvents.isNotEmpty) ...[
+                          _eventSectionTitle(
+                            'Completed',
+                            completedEvents.length,
+                          ),
+                          ...completedEvents.map(_eventCard),
+                        ],
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => showAddEventDialog(DateTime.now()),
+        backgroundColor: textColor,
+        foregroundColor: selectedColor,
+        icon: const Icon(Icons.add_rounded),
+        label: Text(
+          'New event',
+          style: TextStyle(fontFamily: fontNormal),
         ),
       ),
     );

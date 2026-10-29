@@ -63,8 +63,10 @@ class _LauncherState extends State<Launcher> {
       );
     }
 
-    final theme = LauncherThemePreset.byId(
-      prefs.getString(prefsLauncherTheme),
+    final theme = LauncherThemePreset.fromPreferences(
+      id: prefs.getString(prefsLauncherTheme),
+      backgroundColor: prefs.getInt(prefsSelectedColor),
+      textColor: prefs.getInt(prefsTextColor),
     );
     if (!prefs.containsKey(prefsLauncherTheme)) {
       await prefs.setString(prefsLauncherTheme, theme.id);
@@ -75,13 +77,8 @@ class _LauncherState extends State<Launcher> {
     if (!mounted) return;
     setState(() {
       showWallpaper = prefs.getBool(prefsShowWallpaper) ?? false;
-      selectedColor = theme.id == 'custom'
-          ? Color(prefs.getInt(prefsSelectedColor) ??
-              theme.backgroundColor.toARGB32())
-          : theme.backgroundColor;
-      textColor = theme.id == 'custom'
-          ? Color(prefs.getInt(prefsTextColor) ?? theme.textColor.toARGB32())
-          : theme.textColor;
+      selectedColor = theme.backgroundColor;
+      textColor = theme.textColor;
     });
   }
 

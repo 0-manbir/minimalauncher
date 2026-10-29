@@ -29,6 +29,7 @@ Color selectedColor = Colors.white;
 
 class HomeScreenState extends State<HomeScreen> {
   int _batteryLevel = 0;
+  bool _showEventsOnHomeScreen = true;
   late Timer refreshTimer;
 
   final progressController = InteractiveSliderController(0.0);
@@ -99,6 +100,8 @@ class HomeScreenState extends State<HomeScreen> {
       if (selectedColorValue != null) {
         selectedColor = Color(selectedColorValue);
       }
+      _showEventsOnHomeScreen =
+          prefs.getBool(prefsShowEventsOnHomeScreen) ?? true;
     });
   }
 
@@ -338,6 +341,7 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Widget eventsWidget() {
+    if (!_showEventsOnHomeScreen) return const SizedBox.shrink();
     return _eventsToShowOnHome.isNotEmpty
         ? SizedBox(
             height: 100,

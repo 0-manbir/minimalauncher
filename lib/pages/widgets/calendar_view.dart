@@ -231,57 +231,62 @@ class _CustomCalendarViewState extends State<CustomCalendarView> {
   List<TableRow> _buildCalendarDays(int daysInMonth, int startWeekday) {
     List<TableRow> rows = [];
     List<Widget> days = List.generate(startWeekday, (index) => Container());
+    final today = DateTime.now();
 
     for (int day = 1; day <= daysInMonth; day++) {
       final currentDate = DateTime(selectedDate.year, selectedDate.month, day);
-      bool hasEvent = widget.events.any((event) =>
+      final hasEvent = widget.events.any((event) =>
           event.deadline.year == currentDate.year &&
           event.deadline.month == currentDate.month &&
           event.deadline.day == currentDate.day);
+      final isToday = currentDate.year == today.year &&
+          currentDate.month == today.month &&
+          currentDate.day == today.day;
 
       days.add(
         GestureDetector(
           onTap: hasEvent ? () => _showEventsBottomSheet(currentDate) : null,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              if (hasEvent)
-                Container(
-                  width: 35,
-                  height: 35,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: widget.textColor,
+          child: SizedBox(
+            height: 44,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned(
+                  top: 2,
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: isToday
+                          ? Border.all(color: widget.textColor, width: 1.5)
+                          : null,
+                    ),
+                    child: Text(
+                      '$day',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontFamily: widget.fontFamily,
+                        color: widget.textColor,
+                      ),
+                    ),
                   ),
                 ),
-              if (!hasEvent)
-                Container(
-                  width: 35,
-                  height: 35,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: currentDate.day == DateTime.now().day &&
-                            currentDate.month == DateTime.now().month &&
-                            currentDate.year == DateTime.now().year
-                        ? widget.textColor.withOpacity(0.35)
-                        : Colors.transparent,
+                if (hasEvent)
+                  Positioned(
+                    bottom: 1,
+                    child: Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: widget.textColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
                   ),
-                ),
-              Text(
-                '$day',
-                style: TextStyle(
-                  fontSize: 17,
-                  fontFamily: widget.fontFamily,
-                  color: hasEvent
-                      ? widget.bgColor
-                      : (currentDate.day == DateTime.now().day &&
-                              currentDate.month == DateTime.now().month &&
-                              currentDate.year == DateTime.now().year
-                          ? widget.bgColor
-                          : widget.textColor),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );

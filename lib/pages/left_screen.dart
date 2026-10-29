@@ -127,12 +127,18 @@ class _LeftScreenState extends State<LeftScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       clipBehavior: Clip.antiAlias,
-      builder: (BuildContext context) => AppDrawer(
-        autoFocusSearch: true,
-        bgColor: selectedColor,
-        textColor: textColor,
-        showWallpaper: showWallpaper,
-        initiallyShowAllApps: true,
+      useRootNavigator: true,
+      enableDrag: false,
+      builder: (BuildContext context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height,
+        width: MediaQuery.sizeOf(context).width,
+        child: AppDrawer(
+          autoFocusSearch: true,
+          bgColor: selectedColor,
+          textColor: textColor,
+          showWallpaper: showWallpaper,
+          initiallyShowAllApps: true,
+        ),
       ),
     );
 
@@ -401,7 +407,9 @@ class _LeftScreenState extends State<LeftScreen> {
               padding: const EdgeInsets.all(4.0),
               child: Container(
                 decoration: BoxDecoration(
-                  color: textColor.withAlpha(13),
+                  color: packageName == null || packageName == ''
+                      ? textColor.withAlpha(13)
+                      : textColor.withAlpha(0),
                   borderRadius: BorderRadius.circular(16.0),
                 ),
                 child: Center(
@@ -433,8 +441,8 @@ class _LeftScreenState extends State<LeftScreen> {
                                         ),
                                         child: Image.file(
                                           File(snapshot.data!),
-                                          width: 70,
-                                          height: 70,
+                                          width: 75,
+                                          height: 75,
                                           cacheWidth: 140,
                                           cacheHeight: 140,
                                           errorBuilder:
@@ -442,7 +450,7 @@ class _LeftScreenState extends State<LeftScreen> {
                                                   Icon(
                                             Icons.apps_rounded,
                                             color: textColor,
-                                            size: 42,
+                                            size: 45,
                                           ),
                                         ),
                                       ),

@@ -224,84 +224,94 @@ class _AppDrawerState extends State<AppDrawer> {
     if (showAllApps) {
       final cellWidth = (MediaQuery.of(context).size.width -
               32 -
-              (appDrawerColumns - 1) * 15) /
+              (appDrawerColumns - 1) * 12) /
           appDrawerColumns;
       final iconSize = (cellWidth * 0.75).clamp(36.0, 70.0).toDouble();
       return Scaffold(
         backgroundColor:
             widget.showWallpaper ? Colors.transparent : widget.bgColor,
-        body: Padding(
-          padding: const EdgeInsets.only(top: 16.0, left: 16.0, right: 16.0),
-          child: GridView.builder(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: appDrawerColumns,
-              mainAxisSpacing: 15.0,
-              crossAxisSpacing: 15.0,
-              childAspectRatio: 0.7,
-            ),
-            itemCount: sortedApps.length,
-            itemBuilder: (context, index) {
-              final app = sortedApps[index];
-              return GestureDetector(
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      FutureBuilder<String?>(
-                        future: getAppIcon(app.packageName),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.done) {
-                            if (snapshot.hasError) {
-                              return Icon(Icons.apps_rounded,
-                                  color: textColor, size: iconSize);
-                            } else if (snapshot.data?.isNotEmpty == true) {
-                              return Image.file(
-                                File(snapshot.data!),
-                                width: iconSize,
-                                height: iconSize,
-                                cacheWidth: (iconSize * 2).round(),
-                                cacheHeight: (iconSize * 2).round(),
-                                errorBuilder: (context, error, stackTrace) =>
-                                    Icon(Icons.apps_rounded,
-                                        color: textColor, size: iconSize),
-                              );
-                            } else {
-                              return Icon(Icons.apps_rounded,
-                                  color: textColor, size: iconSize);
-                            }
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          foregroundColor: textColor,
+          elevation: 0,
+          leading: IconButton(
+            tooltip: 'Back to app search',
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () => setState(() => showAllApps = false),
+          ),
+          title: Text(
+            'All apps',
+            style: TextStyle(color: textColor, fontFamily: fontNormal),
+          ),
+        ),
+        body: GridView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: appDrawerColumns,
+            mainAxisSpacing: 12.0,
+            crossAxisSpacing: 12.0,
+            childAspectRatio: 0.72,
+          ),
+          itemCount: sortedApps.length,
+          itemBuilder: (context, index) {
+            final app = sortedApps[index];
+            return GestureDetector(
+              child: Padding(
+                padding: const EdgeInsets.all(6.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    FutureBuilder<String?>(
+                      future: getAppIcon(app.packageName),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.done) {
+                          if (snapshot.hasError) {
+                            return Icon(Icons.apps_rounded,
+                                color: textColor, size: iconSize);
+                          } else if (snapshot.data?.isNotEmpty == true) {
+                            return Image.file(
+                              File(snapshot.data!),
+                              width: iconSize,
+                              height: iconSize,
+                              cacheWidth: (iconSize * 2).round(),
+                              cacheHeight: (iconSize * 2).round(),
+                              errorBuilder: (context, error, stackTrace) =>
+                                  Icon(Icons.apps_rounded,
+                                      color: textColor, size: iconSize),
+                            );
                           } else {
                             return Icon(Icons.apps_rounded,
-                                color: textColor.withAlpha(100),
-                                size: iconSize);
+                                color: textColor, size: iconSize);
                           }
-                        },
+                        } else {
+                          return Icon(Icons.apps_rounded,
+                              color: textColor.withAlpha(100), size: iconSize);
+                        }
+                      },
+                    ),
+                    Text(
+                      app.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: 'Rubik',
+                        fontSize: 12,
+                        color: textColor,
                       ),
-                      Text(
-                        app.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: 'Rubik',
-                          fontSize: 12,
-                          color: textColor,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                onTap: () {
-                  Navigator.pop(context, app.packageName);
-                },
-                onLongPress: () {
-                  HapticFeedback.heavyImpact();
-                  InstalledApps.openSettings(app.packageName);
-                },
-              );
-            },
-          ),
+              ),
+              onTap: () {
+                Navigator.pop(context, app.packageName);
+              },
+              onLongPress: () {
+                HapticFeedback.heavyImpact();
+                InstalledApps.openSettings(app.packageName);
+              },
+            );
+          },
         ),
       );
     }
