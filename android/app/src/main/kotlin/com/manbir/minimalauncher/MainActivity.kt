@@ -76,6 +76,81 @@ class MainActivity: FlutterActivity() {
                     changeLauncher()
                     result.success(null)
                 }
+                "getDndStatus" -> {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                        result.success(
+                            mapOf("accessGranted" to false, "enabled" to false)
+                        )
+                    } else {
+                        val notificationManager =
+                            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        val accessGranted =
+                            notificationManager.isNotificationPolicyAccessGranted
+                        result.success(
+                            mapOf(
+                                "accessGranted" to accessGranted,
+                                "enabled" to (
+                                    accessGranted &&
+                                        notificationManager.currentInterruptionFilter !=
+                                        NotificationManager.INTERRUPTION_FILTER_ALL
+                                    ),
+                            )
+                        )
+                    }
+                }
+                "requestDndAccess" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        startActivity(
+                            Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                        )
+                        result.success(null)
+                    } else {
+                        result.error(
+                            "UNSUPPORTED",
+                            "Do Not Disturb access requires Android 6.0 or later.",
+                            null
+                        )
+                    }
+                }
+                "setDndEnabled" -> {
+                    val enabled = call.argument<Boolean>("enabled")
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+                        result.error(
+                            "UNSUPPORTED",
+                            "Do Not Disturb mode requires Android 6.0 or later.",
+                            null
+                        )
+                    } else if (enabled == null) {
+                        result.error("MISSING_ARGUMENT", "Enabled value is missing.", null)
+                    } else {
+                        val notificationManager =
+                            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        if (!notificationManager.isNotificationPolicyAccessGranted) {
+                            result.error(
+                                "ACCESS_DENIED",
+                                "Grant Do Not Disturb access in Android settings first.",
+                                null
+                            )
+                        } else {
+                            try {
+                                notificationManager.setInterruptionFilter(
+                                    if (enabled) {
+                                        NotificationManager.INTERRUPTION_FILTER_NONE
+                                    } else {
+                                        NotificationManager.INTERRUPTION_FILTER_ALL
+                                    }
+                                )
+                                result.success(true)
+                            } catch (error: SecurityException) {
+                                result.error(
+                                    "ACCESS_DENIED",
+                                    error.message ?: "Do Not Disturb access was denied.",
+                                    null
+                                )
+                            }
+                        }
+                    }
+                }
                 "getAppIconPath" -> {
                     val packageName = call.argument<String>("packageName")
                     if (packageName != null) {

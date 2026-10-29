@@ -64,6 +64,8 @@ class _AppDrawerState extends State<AppDrawer> {
   String filter = "";
   bool showAllApps = false;
   bool showRecentApps = true;
+  bool focusModeEnabled = false;
+  Set<String> focusBlockedApps = {};
   int appDrawerColumns = 4;
 
   Color get bgColor => widget.bgColor;
@@ -88,6 +90,9 @@ class _AppDrawerState extends State<AppDrawer> {
     if (!mounted) return;
     setState(() {
       showRecentApps = prefs.getBool(prefsShowRecentApps) ?? true;
+      focusModeEnabled = prefs.getBool(prefsFocusModeEnabled) ?? false;
+      focusBlockedApps =
+          prefs.getStringList(prefsFocusBlockedApps)?.toSet() ?? <String>{};
       final savedColumns = prefs.getInt(prefsAppDrawerColumns) ?? 4;
       appDrawerColumns = [3, 4, 5].contains(savedColumns) ? savedColumns : 4;
     });
@@ -209,14 +214,22 @@ class _AppDrawerState extends State<AppDrawer> {
   @override
   Widget build(BuildContext context) {
     filter = filter.trim();
-    final sortedApps = [...apps]
+    final visibleApps = apps
+        .where((app) =>
+            !focusModeEnabled || !focusBlockedApps.contains(app.packageName))
+        .toList();
+    final visibleRecentApps = recentApps
+        .where((app) =>
+            !focusModeEnabled || !focusBlockedApps.contains(app.packageName))
+        .toList();
+    final sortedApps = [...visibleApps]
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     final filteredApps = filter.isEmpty
         ? []
         : [
-            ...apps.where((app) =>
+            ...visibleApps.where((app) =>
                 app.name.toLowerCase().startsWith(filter.toLowerCase())),
-            ...apps.where((app) =>
+            ...visibleApps.where((app) =>
                 app.name.toLowerCase().contains(filter.toLowerCase()) &&
                 !app.name.toLowerCase().startsWith(filter.toLowerCase())),
           ].toList();
@@ -347,7 +360,9 @@ class _AppDrawerState extends State<AppDrawer> {
       body: Column(
         children: [
           // Displaying 5 most recently installed apps
-          if (showRecentApps && recentApps.isNotEmpty && filter.isEmpty)
+          if (showRecentApps &&
+              visibleRecentApps.isNotEmpty &&
+              filter.isEmpty)
             Expanded(
               flex: 4,
               child: SizedBox(
@@ -355,7 +370,7 @@ class _AppDrawerState extends State<AppDrawer> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.end,
-                  children: recentApps.map((app) {
+                  children: visibleRecentApps.map((app) {
                     return GestureDetector(
                       onTap: () {
                         Navigator.pop(context, app.packageName);
@@ -382,7 +397,7 @@ class _AppDrawerState extends State<AppDrawer> {
               ),
             ),
 
-          if (!showRecentApps || recentApps.isEmpty)
+          if (!showRecentApps || visibleRecentApps.isEmpty)
             const Expanded(child: SizedBox.shrink()),
 
           if (filter.isNotEmpty)

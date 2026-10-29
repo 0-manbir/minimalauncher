@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:installed_apps/app_info.dart';
 import 'package:installed_apps/installed_apps.dart';
 import 'package:minimalauncher/pages/helpers/app_icon.dart';
 import 'package:minimalauncher/pages/right_screen.dart';
@@ -27,13 +28,17 @@ class LeftScreen extends StatefulWidget {
   State<LeftScreen> createState() => _LeftScreenState();
 }
 
-class _LeftScreenState extends State<LeftScreen> {
+class _LeftScreenState extends State<LeftScreen> with WidgetsBindingObserver {
   final TextEditingController weatherApiKeyController = TextEditingController();
 
   late SharedPreferences _prefs;
   Color textColor = Colors.black;
   Color selectedColor = Colors.white;
   bool showWallpaper = false;
+  bool focusModeEnabled = false;
+  bool dndEnabled = false;
+  bool dndAccessGranted = false;
+  Set<String> focusBlockedApps = {};
 
   static const int maxQuickApps = 10;
   List<String?> quickApps = List<String?>.filled(maxQuickApps, null);
@@ -48,11 +53,295 @@ class _LeftScreenState extends State<LeftScreen> {
 
   @override
   void initState() {
+    WidgetsBinding.instance.addObserver(this);
     _loadPreferences();
     _loadQuickApps();
     _loadHomeScreenEvents();
+    _loadFocusPreferences();
+        // Defer DND status loading to after the first frame to ensure method channel is ready
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          // Small delay to ensure Flutter engine and method channel are fully initialized
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted) {
+              _loadDndStatus();
+            }
+          });
+        });
 
-    super.initState();
+        super.initState();
+      }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    weatherApiKeyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadDndStatus();
+    }
+  }
+
+  Future<void> _loadFocusPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      focusModeEnabled = prefs.getBool(prefsFocusModeEnabled) ?? false;
+      focusBlockedApps =
+          prefs.getStringList(prefsFocusBlockedApps)?.toSet() ?? <String>{};
+    });
+  }
+
+  Future<void> _loadDndStatus() async {
+    try {
+      final status = Map<String, dynamic>.from(
+        await _channel.invokeMapMethod<String, dynamic>('getDndStatus') ??
+            <String, dynamic>{},
+      );
+      if (!mounted) return;
+      setState(() {
+        dndAccessGranted = status['accessGranted'] as bool? ?? false;
+        dndEnabled = dndAccessGranted && (status['enabled'] as bool? ?? false);
+      });
+    } on PlatformException {
+      if (!mounted) return;
+      setState(() {
+        dndAccessGranted = false;
+        dndEnabled = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not read Do Not Disturb status.')),
+      );
+    } on MissingPluginException {
+      if (!mounted) return;
+      setState(() {
+        dndAccessGranted = false;
+        dndEnabled = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Update the app to enable the Do Not Disturb control.'),
+        ),
+      );
+    }
+  }
+
+  Future<bool> _canLaunchApp(String packageName) async {
+    final canLaunch = await _channel.invokeMethod<bool>(
+      'canLaunchApp',
+      {'packageName': packageName},
+    );
+    if (canLaunch == null) {
+      throw PlatformException(
+        code: 'INVALID_RESPONSE',
+        message: 'Could not determine whether $packageName can be launched.',
+      );
+    }
+    return canLaunch;
+  }
+
+  Future<void> _configureFocusApps() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final installedApps = await InstalledApps.getInstalledApps(false, false);
+      final launchableApps = (await Future.wait<AppInfo?>(
+        installedApps.map((app) async {
+          return await _canLaunchApp(app.packageName) ? app : null;
+        }),
+      ))
+          .whereType<AppInfo>()
+          .toList()
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      if (!mounted) return;
+
+      final selectedPackages = Set<String>.from(focusBlockedApps);
+      var search = '';
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: selectedColor,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setSheetState) {
+            final filteredApps = launchableApps
+                .where((app) =>
+                    app.name.toLowerCase().contains(search.toLowerCase()))
+                .toList();
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.sizeOf(context).height * 0.9,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Apps to hide in Focus mode',
+                              style: TextStyle(
+                                color: textColor,
+                                fontFamily: fontNormal,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${selectedPackages.length} selected',
+                            style: TextStyle(
+                              color: textColor.withAlpha(160),
+                              fontFamily: fontNormal,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        autofocus: false,
+                        style: TextStyle(color: textColor),
+                        decoration: InputDecoration(
+                          hintText: 'Search apps',
+                          prefixIcon: Icon(Icons.search, color: textColor),
+                        ),
+                        onChanged: (value) =>
+                            setSheetState(() => search = value.trim()),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: filteredApps.length,
+                        itemBuilder: (context, index) {
+                          final app = filteredApps[index];
+                          final isSelected =
+                              selectedPackages.contains(app.packageName);
+                          return CheckboxListTile(
+                            value: isSelected,
+                            activeColor: textColor,
+                            checkColor: selectedColor,
+                            title: Text(
+                              app.name,
+                              style: TextStyle(
+                                color: textColor,
+                                fontFamily: fontNormal,
+                              ),
+                            ),
+                            onChanged: (value) {
+                              setSheetState(() {
+                                if (value == true) {
+                                  selectedPackages.add(app.packageName);
+                                } else {
+                                  selectedPackages.remove(app.packageName);
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: textColor,
+                            foregroundColor: selectedColor,
+                          ),
+                          onPressed: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setStringList(
+                              prefsFocusBlockedApps,
+                              selectedPackages.toList(),
+                            );
+                            if (!mounted || !context.mounted) return;
+                            setState(() {
+                              focusBlockedApps = selectedPackages;
+                            });
+                            widget.onSettingsChanged?.call();
+                            Navigator.of(context).pop();
+                          },
+                          child: const Text('Save blocked apps'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    } on PlatformException catch (error) {
+      messenger.showSnackBar(
+        SnackBar(
+            content: Text('Could not load installed apps: ${error.message}')),
+      );
+    }
+  }
+
+  Future<void> _toggleFocusMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = !focusModeEnabled;
+    await prefs.setBool(prefsFocusModeEnabled, enabled);
+    if (!mounted) return;
+    setState(() => focusModeEnabled = enabled);
+    widget.onSettingsChanged?.call();
+  }
+
+  Future<void> _toggleDndMode() async {
+    try {
+      final status = await _channel.invokeMapMethod<String, dynamic>(
+        'getDndStatus',
+      );
+      final accessGranted = status?['accessGranted'] as bool? ?? false;
+      if (!accessGranted) {
+        await _channel.invokeMethod<void>('requestDndAccess');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Allow Do Not Disturb access, then tap DND again.'),
+            ),
+          );
+        }
+        return;
+      }
+
+      final enabled = !(status?['enabled'] as bool? ?? false);
+      final applied = await _channel.invokeMethod<bool>(
+        'setDndEnabled',
+        {'enabled': enabled},
+      );
+      if (applied != true) {
+        throw PlatformException(
+          code: 'DND_UPDATE_FAILED',
+          message: 'Android did not apply the Do Not Disturb setting.',
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        dndAccessGranted = true;
+        dndEnabled = enabled;
+      });
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update DND: ${error.message}')),
+      );
+      _loadDndStatus();
+    } on MissingPluginException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Update the app to enable the Do Not Disturb control.'),
+        ),
+      );
+    }
   }
 
   // Load preferences from shared preferences
@@ -166,6 +455,8 @@ class _LeftScreenState extends State<LeftScreen> {
           quickSettings(context),
           divider(),
           temperatureWidget(context),
+          divider(),
+          focusAndDndControls(),
           divider(),
           Expanded(child: Container()),
           quickAppsWidget(),
@@ -285,6 +576,116 @@ class _LeftScreenState extends State<LeftScreen> {
     );
   }
 
+  Widget focusAndDndControls() {
+    final inactiveBackground = textColor.withAlpha(20);
+    final inactiveForeground = textColor;
+    final enabledBackground = textColor;
+    final enabledForeground = selectedColor;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: _modeButton(
+              icon: Icons.center_focus_strong_rounded,
+              label: 'Focus mode',
+              enabled: focusModeEnabled,
+              onPressed: _toggleFocusMode,
+              onSetPressed: _configureFocusApps,
+              inactiveBackground: inactiveBackground,
+              inactiveForeground: inactiveForeground,
+              enabledBackground: enabledBackground,
+              enabledForeground: enabledForeground,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            flex: 1,
+            child: _modeButton(
+              icon: Icons.do_not_disturb_on_rounded,
+              label: 'DND',
+              enabled: dndEnabled,
+              onPressed: _toggleDndMode,
+              inactiveBackground: inactiveBackground,
+              inactiveForeground: inactiveForeground,
+              enabledBackground: enabledBackground,
+              enabledForeground: enabledForeground,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modeButton({
+    required IconData icon,
+    required String label,
+    required bool enabled,
+    required VoidCallback onPressed,
+    required Color inactiveBackground,
+    required Color inactiveForeground,
+    required Color enabledBackground,
+    required Color enabledForeground,
+    VoidCallback? onSetPressed,
+  }) {
+    final background = enabled ? enabledBackground : inactiveBackground;
+    final foreground = enabled ? enabledForeground : inactiveForeground;
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          onPressed();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              Icon(icon, color: foreground, size: 28),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: foreground,
+                  fontFamily: fontNormal,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Expanded(child: Container()),
+              if (onSetPressed != null)
+                TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: foreground,
+                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    onSetPressed();
+                  },
+                  child: Icon(
+                    Icons.tune_rounded,
+                    color: foreground,
+                    size: 24,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget temperatureWidget(BuildContext buildContext) {
     return SizedBox(
       child: GestureDetector(
@@ -379,7 +780,11 @@ class _LeftScreenState extends State<LeftScreen> {
         ),
         itemCount: maxQuickApps,
         itemBuilder: (context, index) {
-          final packageName = quickApps[index];
+          final storedPackageName = quickApps[index];
+          final packageName =
+              focusModeEnabled && focusBlockedApps.contains(storedPackageName)
+                  ? null
+                  : storedPackageName;
           return GestureDetector(
             onTap: () async {
               HapticFeedback.mediumImpact();

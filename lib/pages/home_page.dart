@@ -30,6 +30,8 @@ Color selectedColor = Colors.white;
 class HomeScreenState extends State<HomeScreen> {
   int _batteryLevel = 0;
   bool _showEventsOnHomeScreen = true;
+  bool _focusModeEnabled = false;
+  Set<String> _focusBlockedApps = {};
   late Timer refreshTimer;
 
   final progressController = InteractiveSliderController(0.0);
@@ -91,7 +93,7 @@ class HomeScreenState extends State<HomeScreen> {
   _loadPreferences() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     setState(() {
-      is24HourFormat = prefs.getBool(prefsIs24HourFormat) ?? true;
+      is24HourFormat = prefs.getBool(prefsIs24HourFormat) ?? false;
       int? textColorValue = prefs.getInt(prefsTextColor);
       if (textColorValue != null) {
         textColor = Color(textColorValue);
@@ -200,12 +202,31 @@ class HomeScreenState extends State<HomeScreen> {
 
     if (cachedFavorites != null) {
       List<dynamic> jsonFavorites = jsonDecode(cachedFavorites);
+      if (!mounted) return;
       setState(() {
         favoriteApps =
             jsonFavorites.map((app) => Application.fromJson(app)).toList();
+        _focusModeEnabled = prefs.getBool(prefsFocusModeEnabled) ?? false;
+        _focusBlockedApps =
+            prefs.getStringList(prefsFocusBlockedApps)?.toSet() ?? <String>{};
+      });
+    } else {
+      if (!mounted) return;
+      setState(() {
+        _focusModeEnabled = prefs.getBool(prefsFocusModeEnabled) ?? false;
+        _focusBlockedApps =
+            prefs.getStringList(prefsFocusBlockedApps)?.toSet() ?? <String>{};
       });
     }
   }
+
+  List<int> get _visibleFavoriteIndices => [
+        for (var index = 0; index < favoriteApps.length; index++)
+          if (!_focusModeEnabled ||
+              !_focusBlockedApps
+                  .contains(favoriteApps[index].packageName))
+            index,
+      ];
 
   Future<void> _saveFavoriteApps() async {
     final prefs = await SharedPreferences.getInstance();
@@ -412,11 +433,12 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   Widget homeScreenApps() {
+    final visibleIndices = _visibleFavoriteIndices;
     return SizedBox(
       width: MediaQuery.of(context).size.width * 0.8,
       child: Opacity(
         opacity: 0.8,
-        child: favoriteApps.isEmpty
+        child: visibleIndices.isEmpty
             ? Text(
                 "Add a favorite app by \nclicking the STAR ICON \nin the search menu.",
                 textAlign: TextAlign.left,
@@ -426,23 +448,26 @@ class HomeScreenState extends State<HomeScreen> {
                     fontSize: 12.0),
               )
             : ListView.builder(
-                itemCount: favoriteApps.length,
+                itemCount: visibleIndices.length,
                 physics: NeverScrollableScrollPhysics(),
                 shrinkWrap: true,
                 itemBuilder: (context, index) {
+                  final favoriteIndex = visibleIndices[index];
                   return GestureDetector(
                     onTap: () {
                       HapticFeedback.mediumImpact();
-                      InstalledApps.startApp(favoriteApps[index].packageName);
+                      InstalledApps.startApp(
+                        favoriteApps[favoriteIndex].packageName,
+                      );
                     },
                     onLongPress: () {
                       HapticFeedback.heavyImpact();
-                      editHomeScreenApp(context, index);
+                      editHomeScreenApp(context, favoriteIndex);
                     },
                     child: Row(
                       children: [
                         Text(
-                          favoriteApps[index].name,
+                          favoriteApps[favoriteIndex].name,
                           style: TextStyle(
                             color: textColor,
                             fontSize: 21,
@@ -537,6 +562,10 @@ class HomeScreenState extends State<HomeScreen> {
   void editHomeScreenApp(BuildContext context, int index) async {
     TextEditingController nameController =
         TextEditingController(text: favoriteApps[index].name);
+    final visibleFavorites = [
+      for (final visibleIndex in _visibleFavoriteIndices)
+        favoriteApps[visibleIndex],
+    ];
 
     await showModalBottomSheet(
       context: context,
@@ -642,7 +671,7 @@ class HomeScreenState extends State<HomeScreen> {
                                   SizedBox(height: 8),
                                   Expanded(
                                     child: ReorderableListView.builder(
-                                      itemCount: favoriteApps.length,
+                                      itemCount: visibleFavorites.length,
                                       onReorderStart: (index) {
                                         HapticFeedback.mediumImpact();
                                       },
@@ -651,9 +680,30 @@ class HomeScreenState extends State<HomeScreen> {
                                           if (newIndex > oldIndex) {
                                             newIndex -= 1;
                                           }
-                                          final item =
-                                              favoriteApps.removeAt(oldIndex);
-                                          favoriteApps.insert(newIndex, item);
+                                          final newVisibleFavorites =
+                                              [...visibleFavorites];
+                                          final item = newVisibleFavorites
+                                              .removeAt(oldIndex);
+                                          newVisibleFavorites.insert(
+                                              newIndex, item);
+                                          visibleFavorites
+                                            ..clear()
+                                            ..addAll(newVisibleFavorites);
+                                          var visiblePosition = 0;
+                                          for (var favoriteIndex = 0;
+                                              favoriteIndex <
+                                                  favoriteApps.length;
+                                              favoriteIndex++) {
+                                            if (!_focusModeEnabled ||
+                                                !_focusBlockedApps.contains(
+                                                  favoriteApps[favoriteIndex]
+                                                      .packageName,
+                                                )) {
+                                              favoriteApps[favoriteIndex] =
+                                                  visibleFavorites[
+                                                      visiblePosition++];
+                                            }
+                                          }
                                         });
                                         await _saveFavoriteApps();
                                         setState(() {
@@ -663,9 +713,9 @@ class HomeScreenState extends State<HomeScreen> {
                                       itemBuilder: (context, i) {
                                         return ListTile(
                                           key: ValueKey(
-                                              favoriteApps[i].packageName),
+                                              visibleFavorites[i].packageName),
                                           title: Text(
-                                            favoriteApps[i].name,
+                                            visibleFavorites[i].name,
                                             style: TextStyle(
                                               color: textColor,
                                               fontFamily: fontNormal,
