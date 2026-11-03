@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.FileProvider
 import androidx.annotation.RequiresApi
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.FlutterActivityLaunchConfigs.BackgroundMode.transparent
@@ -148,6 +149,86 @@ class MainActivity: FlutterActivity() {
                                     null
                                 )
                             }
+                        }
+                    }
+                }
+                "getAppVersion" -> {
+                    try {
+                        @Suppress("DEPRECATION")
+                        val appInfo = packageManager.getPackageInfo(packageName, 0)
+                        val buildNumber = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            appInfo.longVersionCode
+                        } else {
+                            appInfo.versionCode.toLong()
+                        }
+                        result.success(
+                            mapOf(
+                                "version" to (appInfo.versionName ?: ""),
+                                "buildNumber" to buildNumber.toString()
+                            )
+                        )
+                    } catch (error: PackageManager.NameNotFoundException) {
+                        result.error(
+                            "VERSION_UNAVAILABLE",
+                            "Could not read the installed app version.",
+                            null
+                        )
+                    }
+                }
+                "installApk" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("MISSING_ARGUMENT", "APK path is missing.", null)
+                    } else {
+                        try {
+                            val updatesDirectory =
+                                File(cacheDir, "updates").canonicalFile
+                            val apkFile = File(path).canonicalFile
+                            if (!apkFile.path.startsWith(
+                                    updatesDirectory.path + File.separator
+                                ) || !apkFile.isFile || !apkFile.name.endsWith(
+                                    ".apk",
+                                    ignoreCase = true
+                                )
+                            ) {
+                                result.error(
+                                    "INVALID_APK",
+                                    "The downloaded APK is not in the update cache.",
+                                    null
+                                )
+                            } else if (
+                                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                !packageManager.canRequestPackageInstalls()
+                            ) {
+                                startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        Uri.parse("package:$packageName")
+                                    )
+                                )
+                                result.success(false)
+                            } else {
+                                val apkUri = FileProvider.getUriForFile(
+                                    this,
+                                    "$packageName.fileprovider",
+                                    apkFile
+                                )
+                                val installIntent = Intent(Intent.ACTION_VIEW)
+                                    .setDataAndType(
+                                        apkUri,
+                                        "application/vnd.android.package-archive"
+                                    )
+                                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                startActivity(installIntent)
+                                result.success(true)
+                            }
+                        } catch (error: Exception) {
+                            result.error(
+                                "INSTALL_FAILED",
+                                error.message ?: "Could not open the Android installer.",
+                                null
+                            )
                         }
                     }
                 }

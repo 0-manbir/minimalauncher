@@ -19,6 +19,10 @@ const String prefsWeatherTemp = 'tempr';
 const String prefsWeatherLocation = 'areaname';
 const String prefsWeatherDesc = 'weather';
 
+const String updateGitHubOwner = '0-manbir';
+const String updateGitHubRepository = 'minimalauncher';
+const String updateApkAssetName = 'minimalauncher.apk';
+
 const String homeStatsSeperator = '   /   ';
 
 const String launcherPackageName = 'com.manbir.minimalauncher';

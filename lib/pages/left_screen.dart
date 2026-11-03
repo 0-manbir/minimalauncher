@@ -58,18 +58,18 @@ class _LeftScreenState extends State<LeftScreen> with WidgetsBindingObserver {
     _loadQuickApps();
     _loadHomeScreenEvents();
     _loadFocusPreferences();
-        // Defer DND status loading to after the first frame to ensure method channel is ready
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          // Small delay to ensure Flutter engine and method channel are fully initialized
-          Future.delayed(const Duration(milliseconds: 100), () {
-            if (mounted) {
-              _loadDndStatus();
-            }
-          });
-        });
+    // Defer DND status loading to after the first frame to ensure method channel is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Small delay to ensure Flutter engine and method channel are fully initialized
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          _loadDndStatus();
+        }
+      });
+    });
 
-        super.initState();
-      }
+    super.initState();
+  }
 
   @override
   void dispose() {
@@ -364,7 +364,7 @@ class _LeftScreenState extends State<LeftScreen> with WidgetsBindingObserver {
       WEATHERMAP_API_KEY = _prefs.getString(prefsWeatherApiKey) ?? "";
       _temperature = _prefs.getString(prefsWeatherTemp) ?? "--";
       _weatherSummary = _prefs.getString(prefsWeatherDesc) ??
-          "The weather summary will appear here (click to enter your API key)";
+          "The weather summary will appear here (click to enter your OpenWeatherMap API key)";
       _weatherLocation = _prefs.getString(prefsWeatherLocation) ?? "Location";
     });
   }
@@ -957,6 +957,11 @@ class _LeftScreenState extends State<LeftScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _getWeather(BuildContext buildContext) async {
+    if (WEATHERMAP_API_KEY.trim().isEmpty) {
+      await _showWeatherApiKeyDialog(buildContext);
+      return;
+    }
+
     try {
       if (!await Permission.location.isGranted) {
         await Permission.location.request();
@@ -966,7 +971,7 @@ class _LeftScreenState extends State<LeftScreen> with WidgetsBindingObserver {
           locationSettings:
               const LocationSettings(accuracy: LocationAccuracy.high));
 
-      WeatherFactory wf = WeatherFactory(WEATHERMAP_API_KEY);
+      WeatherFactory wf = WeatherFactory(WEATHERMAP_API_KEY.trim());
 
       Weather weather = await wf.currentWeatherByLocation(
         position.latitude,
@@ -998,76 +1003,81 @@ class _LeftScreenState extends State<LeftScreen> with WidgetsBindingObserver {
       });
     } catch (e) {
       if (buildContext.mounted) {
-        showModalBottomSheet(
-          context: buildContext,
-          backgroundColor: selectedColor,
-          builder: (BuildContext context) {
-            return SizedBox(
-              width: double.maxFinite,
-              child: Column(
-                children: [
-                  const SizedBox(height: 16.0),
-                  Text(
-                    "Enter your OpenWeather API:",
-                    style: TextStyle(
-                      fontFamily: fontNormal,
-                      fontSize: 20,
-                      color: textColor.withAlpha(204),
-                    ),
-                  ),
-                  const SizedBox(height: 8.0),
-                  Container(
-                    margin: const EdgeInsets.all(16.0),
-                    child: TextField(
-                      controller: weatherApiKeyController,
-                      style: TextStyle(
-                        fontFamily: fontNormal,
-                        fontSize: 16,
-                        color: textColor,
-                      ),
-                      onTap: () {
-                        weatherApiKeyController.text = WEATHERMAP_API_KEY;
-                      },
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16.0),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16.0),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        savePrefs(
-                            prefsWeatherApiKey, weatherApiKeyController.text);
-                        _loadPreferences();
-                      });
-                      Navigator.pop(context);
-                    },
-                    style: ButtonStyle(
-                      backgroundColor: WidgetStateProperty.all(textColor),
-                      foregroundColor: WidgetStateProperty.all(selectedColor),
-                    ),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: 12.0, vertical: 12.0),
-                      child: Text(
-                        'Save API Key',
-                        style: TextStyle(
-                          fontFamily: fontNormal,
-                          fontSize: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
+        ScaffoldMessenger.of(buildContext).showSnackBar(
+          SnackBar(content: Text('Could not load weather: $e')),
         );
       }
     }
+  }
+
+  Future<void> _showWeatherApiKeyDialog(BuildContext buildContext) async {
+    weatherApiKeyController.text = WEATHERMAP_API_KEY;
+    await showModalBottomSheet<void>(
+      context: buildContext,
+      backgroundColor: selectedColor,
+      builder: (BuildContext context) {
+        return SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            children: [
+              const SizedBox(height: 16.0),
+              Text(
+                "Enter your OpenWeather API:",
+                style: TextStyle(
+                  fontFamily: fontNormal,
+                  fontSize: 20,
+                  color: textColor.withAlpha(204),
+                ),
+              ),
+              const SizedBox(height: 8.0),
+              Container(
+                margin: const EdgeInsets.all(16.0),
+                child: TextField(
+                  controller: weatherApiKeyController,
+                  style: TextStyle(
+                    fontFamily: fontNormal,
+                    fontSize: 16,
+                    color: textColor,
+                  ),
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16.0),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16.0),
+              ElevatedButton(
+                onPressed: () async {
+                  final apiKey = weatherApiKeyController.text.trim();
+                  await savePrefs(prefsWeatherApiKey, apiKey);
+                  if (!mounted) return;
+                  setState(() {
+                    WEATHERMAP_API_KEY = apiKey;
+                  });
+                  if (context.mounted) Navigator.pop(context);
+                },
+                style: ButtonStyle(
+                  backgroundColor: WidgetStateProperty.all(textColor),
+                  foregroundColor: WidgetStateProperty.all(selectedColor),
+                ),
+                child: const Padding(
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
+                  child: Text(
+                    'Save API Key',
+                    style: TextStyle(
+                      fontFamily: fontNormal,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void showSnackBar(String message) {
