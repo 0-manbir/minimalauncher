@@ -1,12 +1,21 @@
-_minimalauncher_ is an Android Launcher app 🚀 with a minimal interface, providing a clean and distraction-free experience 🌟
-It is designed with simplicity and efficiency in mind, to keep you focused on what truly matters ⌚
+# Minimalauncher
+
+A simple, minimal Android launcher designed to keep your home screen clean and your everyday essentials within easy reach. No unnecessary clutter, just the information and apps you need.
 
 ## Download
 
-<a href="https://github.com/0-manbir/minimalauncher/releases/latest/download/minimalauncher-v2.0.0.apk" target="_blank">Download Latest Release</a><br><br>
+  <a href="https://github.com/0-manbir/minimalauncher/releases/latest/download/minimalauncher.apk">
+    <img src="https://img.shields.io/badge/Download%20Now-Latest%20Release-2ea44f?style=for-the-badge&logo=android&logoColor=white" alt="Download Latest Release">
+  </a>
+
+<hr>
 
 ![minimalauncher](https://github.com/user-attachments/assets/9d02f100-c563-45b3-a576-def4af99618e)
 
+## Roadmap
+
+Features to be added in future updates:
+- Quick access to Android Private Space.
 
 ## Features
 
@@ -38,7 +47,7 @@ It is designed with simplicity and efficiency in mind, to keep you focused on wh
   - Open System Settings
  
 * Weather
-  - Click on the widget to enter your Weathermap API Key. <a href="https://home.openweathermap.org/api_keys">Click here</a> to get your API key.
+  - Click on the widget to enter your OpenWeatherMap API Key. <a href="https://home.openweathermap.org/api_keys">Click here</a> to get your API key.
 
 * Focus Mode: Hides selected apps from the launcher. You can still access them from notifications/recent apps. It only hides it from the launcher.
 * DND: toggles the system DND mode.
